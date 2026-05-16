@@ -218,9 +218,9 @@ Works with existing Claude Code setups immediately.
 
 # Philosophy
 
-Most AI infrastructure today is static.
+At times people miss using appropriate model for appropriate task.
 
-It assumes the largest model should handle every task with every tool attached at all times.
+At times, assumption is: the largest model should handle every task with every tool attached at all times.
 
 That is not intelligence.
 
@@ -238,22 +238,8 @@ This proxy operationalizes that idea.
 
 ---
 
-# Status
-
-Experimental but production-oriented.
-
-Designed for developers running heavy daily Claude Code workflows.
-
----
-
 # Future Roadmap
 
-- adaptive latency-aware routing
-- semantic caching
-- routing learning system
-- automatic fallback retries
-- provider health scoring
-- observability dashboard
-- prompt fingerprint analytics
-- quality feedback loops
-- distributed routing support
+- Governance
+- OpenAI & Other models
+- Have it as Litellm plugin
