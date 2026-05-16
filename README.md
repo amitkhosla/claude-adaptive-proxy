@@ -1,245 +1,156 @@
-# Claude Adaptive Proxy
+# Claude Adaptive Proxy (Smart LLM Routing Proxy)
 
-An intelligent middleware layer between Claude Code / Claude CLI and LiteLLM that dynamically routes requests to the most cost-efficient model while reducing unnecessary context overhead, fixing provider incompatibilities, and stabilizing long-running coding sessions.
+An intelligent, high-performance middleware layer situated between Anthropic-compatible clients (such as the Claude Code CLI) and heterogeneous upstream provider gateways via LiteLLM.
 
----
+By executing:
 
-# Why This Exists
+- Real-time request intent classification
+- Dynamic schema pruning
+- Automated wire-format normalization
 
-Modern coding agents default to expensive frontier models for *every* request.
-
-But most developer workflows are not uniformly complex.
-
-A simple grep operation does not need Sonnet.  
-A file summary does not need Opus.  
-A tool orchestration request does not need deep reasoning.
-
-At the same time, coding agents silently waste massive amounts of context on unused tool schemas and bloated conversation history.
-
-This proxy exists to solve both problems:
-
-- use the *right* model for the task
-- send only the *necessary* context
+this proxy eliminates runaway token spend and guarantees session continuity inside complex, multi-turn software engineering agent loops.
 
 ---
 
-# The Hidden Problem: Tool Schemas Waste Massive Context
+# 🚀 Key Value Propositions
 
-Claude Code sends the schema of every available tool on nearly every request.
+## Up to 80% Token Reduction
 
-That often includes:
-
-- filesystem tools
-- bash tools
-- grep/glob tools
-- Jira MCP tools
-- GitHub MCP tools
-- Confluence integrations
-- internal Claude tools
-
-Even when most of them are irrelevant.
-
-In real-world workflows, tool definitions can consume more tokens than the actual user prompt.
-
-This creates:
-
-- unnecessary token spend
-- larger prompts
-- slower requests
-- increased model confusion
-- Gemini instability in long sessions
-- degraded routing efficiency
-
-Most users never notice this because it happens invisibly.
+Automatically identifies and strips unused tool schemas (e.g., heavy Jira, GitHub, or Confluence MCP integrations) before they are sent to the model.
 
 ---
 
-# How Claude Adaptive Proxy Fixes It
+## Predictive Economic Routing
 
-The proxy classifies request intent and sends only the tools actually needed for the task.
-
-| Request | Tools Sent |
-|---|---|
-| Summarize this file | Read |
-| Search the repository | Grep + Glob |
-| Create Jira ticket | Jira MCP only |
-| Explain architecture | No tools |
-
-Everything else gets stripped.
-
-This dramatically reduces prompt size while preserving workflow behavior.
+Routes simple operations (like `grep` or file summaries) to fast, cost-effective models like `gemini-2.5-flash`, reserving frontier models like `claude-3-5-sonnet` strictly for complex reasoning tasks.
 
 ---
 
-# Core Features
+## Cross-Provider Stability
 
-## Intelligent Model Routing
+Acts as a validation firewall by fixing:
 
-Routes requests dynamically based on:
+- Tool call ID mismatches
+- Role-alternation bugs
+- Vertex AI system prompt limitations
 
-- task complexity
-- reasoning depth
-- tool requirements
-- conversation state
-- context structure
-
-Example routing:
-
-| Task Type | Routed Model |
-|---|---|
-| Simple code lookup | Gemini Flash |
-| Medium reasoning | Claude Haiku OR Gemini Pro|
-| Complex architecture work | Claude Sonnet |
-| Too Complex architecture work | Claude Opus |
-
----
-
-## Smart Tool Filtering
-
-Instead of sending every tool on every request, the proxy:
-
-- detects relevant tools
-- strips unused schemas
-- reduces context overhead
-- improves inference efficiency
-
-This is one of the largest sources of token savings.
-
----
-
-## Context Compression
-
-Long coding sessions generate massive histories.
-
-The proxy intelligently:
-
-- compresses old context
-- preserves recent reasoning chains
-- strips redundant thinking blocks
-- caches cleaned histories
-- removes orphaned tool results
-
-This significantly improves Gemini stability in long-running sessions.
-
----
-
-## Claude ↔ Gemini Compatibility Layer
-
-Anthropic and Gemini APIs behave differently.
-
-The proxy automatically handles:
-
-- tool schema normalization
-- tool call ID sanitization
-- Gemini history constraints
-- system prompt restructuring
-- tool_result formatting fixes
-- role alternation fixes
-- thinking block cleanup
-- malformed message recovery
-
-Without this layer, many cross-provider workflows fail.
-
----
-
-## Streaming Compatible
-
-Works transparently with streaming responses.
-
-No workflow changes required.
-
----
-
-## Cost Analytics & Savings Reports
-
-Built-in reporting includes:
-
-- per-model usage
-- baseline cost comparison
-- routing savings
-- tool schema savings
-- classifier overhead
-- hourly savings reports
-
-You can quantify exactly how much the proxy saves.
-
----
-
-# Key Benefits
-
-## Lower Cost
-
-Reduce unnecessary Sonnet usage automatically.
-
----
-
-## Smaller Context Windows
-
-Stop wasting tokens on irrelevant tools and bloated histories.
-
----
-
-## Better Reliability
-
-Fixes many provider incompatibilities automatically.
-
----
-
-## Faster Requests
-
-Smaller payloads and lighter models improve responsiveness.
-
----
-
-## Longer Stable Sessions
-
-Gemini and multi-provider coding sessions become significantly more reliable.
+that typically crash multi-provider agent sessions.
 
 ---
 
 ## Zero Workflow Changes
 
-Works with existing Claude Code setups immediately.
+Drops directly into your existing environment as a transparent pass-through wrapper.
 
 ---
 
-# Ideal Use Cases
+# 🏗️ System Architecture Overview
 
-- Claude Code power users
-- teams using LiteLLM
-- multi-model coding workflows
-- cost-sensitive AI infrastructure
-- long-running coding sessions
-- Gemini + Claude interoperability
-- agentic development environments
-- MCP-heavy workflows
+The proxy acts as a stateless, functional pass-through wrapper executing the following optimization pipeline:
 
----
+```text
+               [Claude Code CLI / Client]
+                           │
+         (Anthropic Wire Format: /v1/messages)
+                           ▼
+            ┌───────────────────────────────┐
+            │   Smart LLM Routing Proxy     │
+            └───────────────┬───────────────┘
+                            │
+    ┌───────────────────────┴───────────────────────┐
+    ▼                                               ▼
 
-# Philosophy
+(Low/Med Complexity Tasks)             (High Complexity / Failures)
 
-At times people miss using appropriate model for appropriate task.
-
-At times, assumption is: the largest model should handle every task with every tool attached at all times.
-
-That is not intelligence.
-
-Real intelligence is context selection.
-
-Knowing:
-
-- what matters
-- what does not
-- what should be preserved
-- what should be removed
-- and which model is actually sufficient
-
-This proxy operationalizes that idea.
+┌───────────────────────────┐           ┌───────────────────────────┐
+│     Google Vertex AI      │           │    Anthropic API Native   │
+│  (gemini-2.5-flash, etc)  │           │    (claude-3-5-sonnet)    │
+└───────────────────────────┘           └───────────────────────────┘
+```
 
 ---
 
-# Future Roadmap
+# 📘 Detailed Technical Mechanics
 
-- Governance
-- OpenAI & Other models
-- Have it as Litellm plugin
+For internal implementation specifics—including:
+
+- Tiered Sliding-Granularity Prefix Cache
+- Thread-Isolated Inference Classification
+- Vertex AI System Prompt Injection Bypassing
+
+[Please refer to the detailed design document](Design.md)
+
+
+---
+
+# ⚙️ Configuration & Deployment Matrix
+
+The proxy is entirely stateless and process-local.
+
+Configure it via standard environment variables:
+
+| Environment Variable     | Required | Description                                                  | Default / Example |
+|--------------------------|----------|--------------------------------------------------------------|------------------|
+| `PROXY_HOST`             | No       | Network bind interface for the routing proxy layer           | `127.0.0.1` |
+| `PROXY_PORT`             | No       | Listening port for client application redirection            | `8080` |
+| `LITELLM_MASTER_KEY`     | Yes      | Authentication token matching your upstream gateway          | `sk-litellm-...` |
+| `HTTPX_MAX_CONNECTIONS`  | No       | Maximum parallel sockets allocated in the client pool        | `200` |
+| `HTTPX_MAX_KEEPALIVE`    | No       | Retained idle connections for rapid mid-loop turns           | `50` |
+
+---
+
+# 🏃 Quick Start
+
+## 1. Start the Proxy
+
+Ensure your environment variables are set, then spin up the proxy instance:
+
+```bash
+# Example using Python
+# (adjust based on your runtime engine, e.g., Go/Rust/Node)
+
+python main.py
+```
+
+---
+
+## 2. Configure Claude Code to Target the Proxy
+
+Redirect your client's API endpoint base to point to the local proxy instance:
+
+```bash
+export ANTHROPIC_BASE_URL="http://127.0.0.1:8080/v1"
+```
+
+Run Claude as you normally would.
+
+The proxy handles the rest invisibly.
+
+---
+
+# 📊 Financial Auditing & Observability
+
+The system computes precise operational efficiency margins by dividing token reduction yields across four discrete accounting heads evaluated against fixed baseline metrics (`claude-3-5-sonnet` standard costs).
+
+\[
+\text{Net Savings}
+=
+\text{Model Routing Savings}
++
+\text{Built-in Tool Savings}
++
+\text{MCP Tool Savings}
+-
+\text{Classifier Overhead}
+\]
+
+---
+
+## Observability Outputs
+
+- Short-form efficiency metrics are flushed to stdout every 10 minutes.
+- Audit-ready financial ledgers are written every hour directly to disk.
+
+```text
+/proxylogs/savings-YYYY-MM-DD-HH.txt
+```
