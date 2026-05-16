@@ -78,11 +78,8 @@ For internal implementation specifics—including:
 - Thread-Isolated Inference Classification
 - Vertex AI System Prompt Injection Bypassing
 
-please refer to the detailed design document:
+[Please refer to the detailed design document](Design.md)
 
-```text
-design.md
-```
 
 ---
 
