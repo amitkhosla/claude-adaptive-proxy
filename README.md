@@ -151,25 +151,16 @@ The proxy handles the rest invisibly.
 
 The system computes precise operational efficiency margins by dividing token reduction yields across four discrete accounting heads evaluated against fixed baseline metrics (`claude-3-5-sonnet` standard costs).
 
-\[
-\text{Net Savings}
-=
-\text{Model Routing Savings}
-+
-\text{Built-in Tool Savings}
-+
-\text{MCP Tool Savings}
--
-\text{Classifier Overhead}
-\]
+$$
+\text{Net Savings} = \text{Model Routing Savings} + \text{Built-in Tool Savings} + \text{MCP Tool Savings} - \text{Classifier Overhead}
+$$
 
 ---
 
 ## Observability Outputs
 
-- Short-form efficiency metrics are flushed to stdout every 10 minutes.
-- Audit-ready financial ledgers are written every hour directly to disk.
+*   **Short-form efficiency metrics** are flushed to `stdout` every 10 minutes.
+*   **Audit-ready financial ledgers** are written every hour directly to disk:
 
 ```text
 /proxylogs/savings-YYYY-MM-DD-HH.txt
-```
