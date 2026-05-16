@@ -8,11 +8,22 @@ By executing:
 - Dynamic schema pruning
 - Automated wire-format normalization
 
-this proxy eliminates runaway token spend and guarantees session continuity inside complex, multi-turn software engineering agent loops.
+The proxy eliminates runaway token spend and guarantees session continuity inside complex, multi-turn software engineering agent loops.
 
 ---
 
-# 🚀 Key Value Propositions
+# 🚀 Core Capabilities
+
+| Capability | Purpose |
+|---|---|
+| Intent Classification | Detects task complexity dynamically |
+| Schema Pruning | Removes unused tool definitions before inference |
+| Multi-Tier Routing | Routes traffic across Flash, Pro, and Sonnet tiers |
+| Protocol Repair | Fixes cross-provider incompatibilities |
+| SSE Streaming Support | Preserves low-latency streaming continuity |
+| Prefix Cache | Optimizes long conversational histories |
+| Failover Recovery | Retries safely across provider hierarchies |
+```
 
 ## Up to 80% Token Reduction
 
@@ -57,20 +68,28 @@ The proxy acts as a stateless, functional pass-through wrapper executing the fol
             │   Smart LLM Routing Proxy     │
             └───────────────┬───────────────┘
                             │
-    ┌───────────────────────┴───────────────────────┐
-    ▼                                               ▼
+        ┌───────────────────┴───────────────────┐
+        ▼                                       ▼
 
-(Low/Med Complexity Tasks)             (High Complexity / Failures)
+   (Low Complexity)                 (Medium / High Complexity)
 
-┌───────────────────────────┐           ┌───────────────────────────┐
-│     Google Vertex AI      │           │    Anthropic API Native   │
-│  (gemini-2.5-flash, etc)  │           │    (claude-3-5-sonnet)    │
-└───────────────────────────┘           └───────────────────────────┘
+┌───────────────────────────┐     ┌───────────────────────────┐
+│     Gemini 2.5 Flash      │     │      Gemini 2.5 Pro       │
+│  Fast / Cost Optimized    │     │   Advanced Reasoning      │
+└─────────────┬─────────────┘     └─────────────┬─────────────┘
+              │                                 │
+              └──────────────┬──────────────────┘
+                             ▼
+
+                 ┌───────────────────────────┐
+                 │     Claude 3.5 Sonnet     │
+                 │  Fallback / Recovery Tier │
+                 └───────────────────────────┘
 ```
 
 ---
 
-# 📘 Detailed Technical Mechanics
+## 📘 Detailed Technical Mechanics
 
 For internal implementation specifics—including:
 
@@ -78,7 +97,7 @@ For internal implementation specifics—including:
 - Thread-Isolated Inference Classification
 - Vertex AI System Prompt Injection Bypassing
 
-[Please refer to the detailed design document](Design.md)
+[Detailed design document](Design.md)
 
 
 ---
