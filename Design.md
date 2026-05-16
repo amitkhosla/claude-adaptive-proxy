@@ -1,746 +1,336 @@
-# Smart LLM Routing Proxy – Design Document
-
-## Overview
-
-This document describes the architecture, design decisions, operational behavior, and implementation details of the smart LLM routing proxy implemented in this repository.
-
-The proxy sits in front of Anthropic-compatible `/v1/messages` APIs and dynamically routes requests between Claude and Gemini-family models based on:
-
-* Request complexity
-* Tool requirements
-* Tool schema compatibility
-* Prompt size
-* Conversation state
-* Cost optimization goals
-
-The implementation focuses on reducing operational cost while preserving compatibility with Claude Code-style tool execution workflows and maintaining high reliability under large-context, multi-turn coding sessions.
+# Smart LLM Routing Proxy – Architectural Design Document
 
 ---
 
-# Goals
+# 1. Executive Summary & Topology
 
-## Primary Goals
-
-1. Reduce inference cost without materially degrading output quality.
-2. Transparently route requests between multiple model providers.
-3. Preserve compatibility with Anthropic-style tool calling.
-4. Handle long-running coding sessions safely.
-5. Avoid tool-chain corruption during mid-tool execution.
-6. Support graceful fallback and retry behavior.
-7. Produce measurable savings metrics.
-
-## Non-Goals
-
-* Perfect semantic equivalence across providers.
-* Full provider abstraction layer.
-* Persistent distributed caching.
-* Advanced policy engines.
-* Request deduplication across users.
-
----
-
-# High-Level Architecture
-
-## Request Flow
+The Smart LLM Routing Proxy is a stateless, performance-engineered orchestration layer situated directly between Anthropic-compatible (`/v1/messages`) execution clients (such as the Claude Code CLI) and heterogeneous upstream provider gateways via LiteLLM.
 
 ```text
-Client Request
-    |
-    v
-FastAPI Proxy
-    |
-    +--> Request Sanitization
-    |
-    +--> Conversation Repair
-    |
-    +--> Model Discovery
-    |
-    +--> Request Classification
-    |
-    +--> Routing Decision
-    |
-    +--> Tool Filtering
-    |
-    +--> Gemini Compatibility Sanitization
-    |
-    +--> Forward to Upstream Provider
-    |
-    +--> Retry / Fallback Chain
-    |
-    +--> Response Rewriting
-    |
-    +--> Usage + Savings Tracking
-    |
-    v
-Client Response
++-------------------+           +-----------------------+           +-------------------+
+|  Claude Code CLI  |  -------> |  Smart Routing Proxy  |  -------> |  LiteLLM Gateway  |
++-------------------+           +-----------------------+           +-------------------+
+                                            |
+                                            +---> [Sanitization & Repair]
+                                            +---> [Tiered Prefix Cache]
+                                            +---> [Intent Classifier]
 ```
 
----
-
-# Core Design Principles
-
-## 1. Stateless Routing
-
-Each request is independently routable because the complete conversation history is always supplied by the client.
-
-This enables:
-
-* Mid-conversation provider switching
-* Tool-loop routing changes
-* Adaptive cost optimization
-* Retry across providers
-
-The proxy does not rely on hidden conversational state.
-
-## 2. Safety Before Optimization
-
-The router aggressively avoids risky provider transitions when:
-
-* Tool schemas are complex
-* Tool loops are active
-* Message history becomes structurally invalid
-* Provider compatibility is uncertain
-
-This intentionally sacrifices some savings in favor of correctness.
-
-## 3. Incremental Compatibility Repair
-
-Instead of assuming providers behave identically, the proxy normalizes request history before forwarding.
-
-This includes:
-
-* Empty content cleanup
-* Orphaned tool result removal
-* Gemini-safe schema flattening
-* Tool input serialization
-* Role alternation fixes
-* Extended-thinking normalization
+The system targets runtime optimizations inside multi-turn, tool-heavy software engineering agent interactions. It minimizes token exposure footprint, enforces multi-provider wire-format normalization, and applies predictive economic model routing without mutating agent behavior or breaking active multi-turn tool loops.
 
 ---
 
-# Configuration Model
+# 2. Design Tenets & System Goals
 
-Configuration is loaded from `config.yaml` and acts as the single source of truth.
+## 2.1 Primary Goals
 
-Key configuration areas:
+### Inference Cost Reduction
+Mitigate runaway token spend by dynamically identifying and offloading low-to-medium complexity agent turns to cost-effective model families.
 
-* Model routing chains
-* Pricing tables
-* Baseline model definition
-* Gemini-safe tool allowlists
-* Large prompt thresholds
-* Classifier preferences
+### Transparent Multi-Provider Interoperability
+Sit invisibly between standard Anthropic client requests and upstream provider backends, handling data transformations transparently.
 
-Example categories observed in implementation:
+### Session Preservation
+Secure multi-turn agent execution states over hours of operations, preventing syntax-level or protocol-level crashes during mid-tool loops.
 
-```yaml
-chains:
-  gemini:
-  gemini_large:
-  claude:
-  claude_1m:
-
-pricing:
-  claude-sonnet:
-  claude-haiku:
-  gemini-2.5-flash:
-```
-
-The implementation dynamically loads configuration during startup. fileciteturn0file11L19-L41
+### Auditable Financial Accounting
+Compute real-time savings metrics split across model execution arbitrage and aggressive context-reduction heads.
 
 ---
 
-# Model Routing Architecture
+## 2.2 Non-Goals
 
-## Routing Inputs
+### Semantic Equivalence
+The proxy does not guarantee identical qualitative reasoning characteristics between routed models; it optimizes for task-level competency thresholds.
 
-The routing engine evaluates:
-
-* User message
-* Tool list
-* System prompt
-* Prompt size
-* Conversation state
-* Tool schema complexity
-* Model availability
-
-## Classification Pipeline
-
-The classifier performs a lightweight LLM classification step to determine:
-
-* Whether tools are required
-* Request complexity
-* Relevant tools
-* Whether history may be skipped
-
-Classifier output format:
-
-```json
-{
-  "needs_tools": true,
-  "complexity": "medium",
-  "relevant_tools": ["Read", "Grep"],
-  "can_skip_history": false
-}
-```
-
-The classifier explicitly distinguishes between:
-
-* Low complexity
-* Medium complexity
-* High complexity
-
-and avoids overestimating complexity simply because multiple tools are involved. fileciteturn0file17L36-L88
-
-## Classification Caching
-
-A short-lived in-memory cache avoids repeated classifier calls for identical requests.
-
-Observed implementation:
-
-* TTL-based cache
-* MD5-based cache key
-* Includes:
-
-  * User message
-  * Tool names
-  * System prompt prefix
-
-fileciteturn0file11L42-L64
+### Persistent External State Management
+The proxy operates without external database requirements, avoiding distributed coordination bottlenecks.
 
 ---
 
-# Model Selection Strategy
+## 2.3 Core Design Principles
 
-## Claude Usage
+### Stateless Request Autonomy
+The proxy acts as a pure, functional pass-through wrapper. Because client applications natively pass the full conversation timeline with every turn, the proxy treats each transaction as entirely self-contained. This allows for fluid mid-session provider adjustments and instant hot-swapping under transport errors.
 
-Claude-family models are preferred when:
-
-* Complex tools are required
-* Tool schemas contain nested structures
-* Editing workflows are active
-* Bash or write operations are involved
-* High reasoning depth is needed
-
-## Gemini Usage
-
-Gemini-family models are preferred when:
-
-* Requests are conversational
-* Tools are simple
-* Schemas are flat
-* Prompt cost dominates execution cost
-* High throughput is desired
-
-## Tool Safety Rules
-
-The implementation maintains an explicit Gemini-safe tool allowlist.
-
-Supported strategies:
-
-* Exact tool name matching
-* Prefix matching for MCP tools
-* Schema complexity inspection for unknown tools
-
-Complex schemas are rejected for Gemini routing. fileciteturn0file8L34-L79
-
-## Large Prompt Routing
-
-Prompt size estimation is performed before routing.
-
-The estimator computes total payload size across:
-
-* System prompt
-* Messages
-* Tool outputs
-
-The implementation specifically targets large-context coding sessions where historical tool output may dominate payload size. fileciteturn0file8L11-L33
+### Safety Defensively Prioritized
+Financial savings are aggressively sacrificed if payload complexity flags are raised. When ambiguous tool schemas, active file-mutation pipelines (`MultiEdit`), or structural anomalies are detected, the proxy forces an immediate fallback to the high-overhead baseline model (`claude-3-5-sonnet`).
 
 ---
 
-# Tool Filtering Optimization
+# 3. Detailed Request Pipeline & Flow
 
-## Problem
-
-Claude Code tool schemas can become extremely large.
-
-Examples:
-
-* MCP tools
-* Jira integrations
-* GitHub integrations
-* Nested object schemas
-
-These schemas significantly increase prompt token usage.
-
-## Solution
-
-The proxy strips unused tools before forwarding.
-
-Strategies:
-
-1. Remove all tools if no tools are needed.
-2. Retain only classifier-selected tools.
-3. Compute token savings from removed schemas.
-
-Observed logging behavior:
+When a client hits the `/v1/messages` endpoint, the request transitions through a deterministic execution and optimization pipeline:
 
 ```text
-Tools: 30 -> 4
-(stripped 26: ~120k builtin + ~400k MCP tokens saved)
+Client Request (POST /v1/messages)
+                       │
+                       ▼
+         ┌───────────────────────────┐
+         │  Header Key Extraction    │
+         │  --> Extracts and enforces client-side API tokens
+         └─────────────┬-------------┘
+                       │
+                       ▼
+         ┌───────────────────────────┐
+         │   Lazy Model Discovery    │
+         │  --> Locks available upstream targets on first hit
+         └─────────────┬-------------┘
+                       │
+                       ▼
+         ┌───────────────────────────┐
+         │ Timeline & ID Sanitation  │
+         │  --> Fixes tool-call dot/colon ID formatting mismatches
+         └─────────────┬-------------┘
+                       │
+                       ▼
+         ┌───────────────────────────┐
+         │ Tiered History Cache Check│
+         │  --> Searches high/coarse granularity prefix hits
+         └─────────────┬-------------┘
+                       │
+                       ▼
+         ┌───────────────────────────┐
+         │ Async Intent Execution    │
+         │  --> Offloads routing classification to worker thread
+         └─────────────┬-------------┘
+                       │
+                       ▼
+         ┌───────────────────────────┐
+         │ Schema Filter & Pruning   │
+         │  --> Strips unused built-in & MCP JSON definitions
+         └─────────────┬-------------┘
+                       │
+                       ▼
+         ┌───────────────────────────┐
+         │ Protocol Adaption Layer   │
+         │  --> Applies Gemini history/system transformations
+         └─────────────┬-------------┘
+                       │
+                       ▼
+         Forwarded Upstream Gateway
+         --> Employs optimized high-throughput httpx client pools
 ```
 
-fileciteturn0file6L1-L23
+---
 
-## Built-in vs MCP Tool Handling
+# 4. Subsystem Deep-Dives
 
-The implementation explicitly separates:
+## 4.1 Tiered Search History Cache Engine
 
-* Claude Code built-in tools
-* MCP tools
+As deep programming sessions progress, parsing and processing massive message arrays sequentially on every turn becomes an \( O(N) \) structural bottleneck.
 
-Built-ins include:
+The proxy implements a non-naive, sliding-granularity lookback strategy inside `_clean_history_incremental`:
 
-* Read
-* Write
-* Edit
-* Bash
-* Grep
-* LS
-* WebSearch
-* TodoRead
-* NotebookEdit
+### Tier 1 — High Granularity Lookback
+Evaluates the immediate conversational neighborhood (the last 20 conversational frames with a step-index of 1) to account for rapid-fire local changes.
 
-fileciteturn0file7L31-L41
+### Tier 2 — Coarse Granularity Lookback
+Jumps progressively backwards (every 10th index from 30 up to 130 frames deep) to evaluate historical stability milestones.
 
-This distinction matters because MCP schemas are often substantially larger.
+### Mechanism
+When a stable historical prefix is identified via SHA-256 content hashing, the proxy instantly retrieves the pre-cleaned cache record and appends only the un-cached "tail" segment.
+
+This isolates mutating computations and protects system latency.
 
 ---
 
-# Gemini Compatibility Layer
+## 4.2 Automated Payload Sanitization & Conversation Repair
 
-Gemini via LiteLLM has stricter structural validation than Claude.
+To bridge differences between Anthropic and Gemini schemas, the proxy acts as a runtime validation firewall.
 
-The proxy implements a substantial compatibility layer.
+### Tool Call Identifier Sanitization
 
-## Key Repairs
+Downstream non-Anthropic backends frequently return alphanumeric transaction identifiers containing periods or colons (e.g., `tool_id: 1.2`).
 
-### 1. Empty Text Block Removal
+If these tracking markers are presented back to an Anthropic model on a subsequent turn, the client parser immediately flags an unrecoverable `HTTP 400 Bad Request`.
 
-Gemini rejects empty text blocks.
+The proxy sweeps history frames and normalizes all ID syntax structures cleanly.
 
-The proxy removes:
+### Orphaned Block Remediation
 
-```json
-{"type": "text", "text": ""}
-```
+Traverses incoming conversation states and purges dangling `tool_result` sequences that lack an associated parent `tool_use` counterpart block.
 
-from both:
+### Role Alternation Normalization
 
-* Top-level content
-* Nested tool_result content
-
-fileciteturn0file15L65-L84
+Smooths over contiguous, same-role message segments (e.g., consecutive user blocks) by combining and merging text components instead of dropping payloads, ensuring compliance with strict upstream APIs.
 
 ---
 
-### 2. Extended Thinking Conversion
+## 4.3 Intent Classification and Dynamic Schema Optimization
 
-Gemini cannot safely replay Anthropic thinking blocks.
+To reduce the context bloat caused by frameworks that bundle entire tool definition arrays with every frame, the engine performs context compression by combining intent analysis with structural pruning.
 
-The proxy:
+### Fingerprint Signature Lookup
 
-* Extracts thinking blocks
-* Converts them into plain text
-* Appends them as a normal text section
+Request attributes (User prompt fragments, Global Tool configuration tables, System Directives) are hashed using an MD5-based signature block, referencing an in-memory classification cache.
 
-This preserves reasoning context while avoiding provider incompatibilities. fileciteturn0file15L1-L63
+### Thread-Isolated Inference Classification
 
----
+Upon a cache miss, evaluation tasks are dispatched asynchronously to a dedicated background thread executor using `run_in_executor`.
 
-### 3. Tool Input Serialization
+The routing model determines:
 
-Built-in Claude tools are flattened for Gemini compatibility.
+- Complexity indicators
+- Tool usage dependencies
+- History skipping flags
 
-Nested object inputs are serialized into JSON strings to align with simplified schemas.
+### Intent-Driven Pruning
 
-Important distinction:
+If the classifier flags that the agent's turn requires no active tool access, the proxy strips all tool schemas entirely.
 
-* Built-in tools are flattened
-* MCP tools preserve native object structures
+If tools are required, only the specific schemas highlighted by the classifier are retained.
 
-This avoids schema/type mismatches. fileciteturn0file19L1-L44
+This tracking component computes the token size delta between original and optimized schemas, splitting savings tracking across two heads:
 
----
-
-### 4. Conversation Sanitization
-
-Gemini-specific validation includes:
-
-* Ensuring assistant messages contain text
-* Removing orphaned tool results
-* Fixing malformed history
-* Maintaining role alternation
-
-fileciteturn0file18L21-L74
+- Built-in Tools (`Read`, `Write`, `Bash`, `Edit`, etc.)
+- Heavy enterprise MCP Tools (`Jira`, `GitHub`, `Confluence`)
 
 ---
 
-### 5. History Flattening
+# 5. Cross-Ecosystem Protocol Adaptations
 
-Long conversations are compressed into textual summaries.
-
-The implementation:
-
-* Preserves recent messages intact
-* Summarizes older history
-* Avoids splitting active tool chains
-* Maintains role alternation correctness
-
-This significantly reduces payload size for long-running coding sessions. fileciteturn0file1L1-L62
+When the routing layer targets a non-Anthropic destination model family (e.g., Google Gemini via LiteLLM), specific format conversions are applied dynamically.
 
 ---
 
-# Conversation Repair Logic
+## 5.1 Extended Thinking Sequence Transformations
 
-## Orphaned Tool Results
+Models utilizing active token reasoning outputs generate structural internal thinking payloads.
 
-Provider switching and message trimming can orphan tool results.
-
-The implementation removes tool_result blocks whose corresponding tool_use no longer exists.
-
-This prevents provider-side validation failures.
-
-## Consecutive Role Merging
-
-Gemini enforces stricter role alternation than Claude.
-
-The proxy merges consecutive same-role messages instead of dropping them.
-
-This preserves:
-
-* Tool calls
-* Tool responses
-* Context continuity
-
-while satisfying Gemini constraints.
-
-fileciteturn0file15L54-L63
+The proxy captures these raw reasoning segments, translates them into plain-text blocks, and appends them as standard text elements to protect target execution parsers from schema collisions.
 
 ---
 
-# Request Forwarding
+## 5.2 System Prompt Injection Bypassing
 
-## HTTP Layer
+Google Vertex AI enforces a strict, undocumented threshold (~8,000 characters) on the `system_instruction` configuration field.
 
-The implementation uses a shared async `httpx.AsyncClient`.
+Agent frameworks routinely exceed this boundary during heavy engineering loops due to expansive environmental declarations, environment variables, and instruction suites.
 
-Configuration includes:
+### Mitigation Strategy (`_inject_system_into_first_message`)
 
-* Increased connection limits
-* Large read timeouts
-* Keepalive tuning
-* Connection pooling
+When routing to a Gemini backend, the proxy intercepts the system payload, removes it from the configuration header, wraps it neatly within explicit structural `<SYSTEM_CONTEXT>` XML tags, and prepends it directly to the first user content array element.
 
-The implementation is explicitly optimized for:
+### Architectural Win
 
-* Large payloads
-* Long-running streams
-* Parallel tool-heavy workloads
+This shifts the massive instruction layout out of the restricted configuration metadata pool and leverages Gemini's expansive 1M+ token context window, while model fine-tuning guarantees strong alignment with the XML structural boundaries.
 
-fileciteturn0file9L70-L80
+---
+# 6. Resiliency & Streaming Infrastructure Architecture
+
+## 6.1 Multi-Level Fallback & Failover Chains
+
+To prevent developer session disruptions from upstream provider rate limits (HTTP 429) or server faults (HTTP 5xx), the proxy builds and executes dynamic, ordered destination chains.
+
+'''text
+[Initial Target: gemini-flash] ──► (HTTP 429 / 500 Fault)
+                                            │
+                                            ▼ [Intercept & Rollback Payload]
+                                 [Fallback Tier 1: claude-haiku] ──► (Success)
+
+The sequence is constructed at runtime based on the turn's assessed complexity tier. For example, a low-complexity operational step maps out an emergency fallback pipeline traversing gemini-flash -> claude-haiku -> claude-sonnet. If the primary endpoint fails, the proxy interceptor catches the exception, recovers the original unmutated request payload from memory, and retries the loop down the sequence hierarchy silently.
+
+## 6.2 Streaming (SSE) Continuity and Token Accounting
+
+Because coding agents depend on rapid stream token returns for responsiveness, the proxy splits execution processing between standard HTTP responses and asynchronous Server-Sent Event (SSE) streams via an optimized httpx.AsyncClient pool.
+
+### Connection Pool Tuning
+
+Configured to maintain:
+
+- 200 open parallel sockets
+- Up to 50 active keep-alive connections
+
+This eliminates connection assembly overhead and TCP/TLS handshaking latency on successive tool iteration turns.
+
+### Stream Token Parsing
+
+During an active streaming session, the proxy processes chunk payloads in real time.
+
+It:
+
+- Monitors streaming usage summaries
+- Logs token accounting metrics
+- Rewrites model target metadata blocks dynamically before forwarding responses back to the client
+
+This guarantees precise financial metric captures without blocking execution paths.
 
 ---
 
-# Streaming Architecture
+# 7. Financial Accounting & Observability
 
-Streaming responses are handled separately from non-streaming responses.
+## 7.1 Multi-Head Yield Calculations
 
-The stream layer:
+Real-time financial performance auditing measures gross yields against fixed baseline reference metrics (`claude-3-5-sonnet`) across four distinct accounting heads.
 
-* Tracks SSE token usage
-* Rewrites model metadata
-* Handles fallback retries
-* Preserves streaming continuity
+\[
+\text{Net Savings} =
+\text{Model Routing Savings}
++
+\text{Built-in Tool Savings}
++
+\text{MCP Tool Savings}
+-
+\text{Classifier Overhead}
+\]
 
-The implementation supports chained retries during active streams. fileciteturn0file12L1-L74
+Where:
+
+- **Model Routing Savings**  
+  Savings from model price differences for identical token spans.
+
+- **Built-in & MCP Tool Savings**  
+  Saved token costs from stripped tool schemas, valued at the baseline model's pricing.
+
+- **Classifier Overhead**  
+  Subtracted directly from gross yields, capturing the real-world operational cost of routing requests with a faster model like `gemini-2.5-flash`.
 
 ---
 
-# Fallback Strategy
+## 7.2 Observability Architecture
 
-## Multi-Level Retry Chain
+### Request-Scoped Reference Tags
 
-The implementation supports progressive fallback chains.
+All transactions receive a short-lived, random 4-hex identification marker (`[req-xxxx]`).
 
-Example:
+This marker prefixes interleaved logging traces across concurrent asynchronous execution steps, simplifying log correlation and debugging.
+
+### Diagnostic Ledger Outputs
+
+Every 10 minutes, short-form operational efficiencies are flushed to system output streams.
+
+On every hour boundary, comprehensive cost ledgers are compiled and saved to disk:
 
 ```text
-gemini-flash
-    -> gemini-2.5-flash
-        -> claude-haiku
-            -> claude-sonnet
+/proxylogs/savings-YYYY-MM-DD-HH.txt
 ```
 
-The fallback chain is dynamically constructed based on:
-
-* Complexity
-* Availability
-* Current model
-* Configured chains
-
-fileciteturn0file6L44-L64
-
-## Failure Handling
-
-The proxy retries on:
-
-* HTTP 400
-* Streaming failures
-* Provider incompatibilities
-* Network exceptions
-
-The original model request payload is preserved to guarantee rollback capability.
-
-fileciteturn0file10L1-L76
+for audit tracing.
 
 ---
 
-# Observability and Diagnostics
+# 8. Known System Constraints & Technical Boundaries
 
-## Request-Scoped Logging
+## Local Worker Memory Isolation
 
-Each request receives a unique request ID.
+Caching records, statistical counters, and history indices are stored process-locally in memory.
 
-Example:
-
-```text
-[req-a1b2] Gemini route selected
-```
-
-This enables:
-
-* Correlated debugging
-* Streaming diagnostics
-* Retry tracing
-* Cost attribution
-
-fileciteturn0file7L1-L15
+Scaling the proxy horizontally requires externalizing state storage to a central cache layer (e.g., Redis).
 
 ---
 
-## Debug Logging
+## Contextual Shift Risks
 
-The proxy writes structured JSONL debug records including:
-
-* Original model
-* Chosen model
-* Routing reason
-* Tool counts
-* Error bodies
-* Response previews
-
-The implementation intentionally logs summaries rather than full message payloads to reduce log size and avoid leaking large prompts. fileciteturn0file0L1-L52
+Compressing long historical segments or formatting internal thinking chains into plain text can cause minor variations in agent behavior.
 
 ---
 
-## Full Request Logging
+## Upstream Framework Dependencies
 
-Optional verbose logging captures:
+The structural formatting components remain coupled to:
 
-* Original payload
-* Sanitized payload
-* Error responses
-* Retry attempts
+- The Anthropic API message layout patterns
+- LiteLLM downstream schema translation mechanics
 
-This is intended for deep production debugging.
-
----
-
-# Cost Accounting System
-
-## Savings Model
-
-Savings are computed relative to a baseline model.
-
-Baseline:
-
-```text
-claude-sonnet
-```
-
-Savings are broken into:
-
-1. Model routing savings
-2. Built-in tool schema savings
-3. MCP schema savings
-4. Classifier overhead
-
-fileciteturn0file14L1-L52
-
-## Cost Attribution
-
-Per-request accounting includes:
-
-* Input tokens
-* Output tokens
-* Tool schema token reductions
-* Classifier cost overhead
-
-## Hourly Savings Reports
-
-The implementation periodically generates human-readable savings reports.
-
-Reports include:
-
-* Per-model breakdowns
-* Net savings
-* Percent savings
-* Savings category attribution
-
-fileciteturn0file5L1-L53
-
----
-
-# Startup and Lifecycle
-
-The FastAPI lifespan handler initializes:
-
-* Prompt history
-* Background reporters
-* Model discovery
-* Shared runtime state
-
-Model discovery is lazy-loaded on first authenticated request. fileciteturn0file0L53-L80 fileciteturn0file16L1-L15
-
----
-
-# Performance Characteristics
-
-## Strengths
-
-### Significant Token Reduction
-
-Tool filtering and history flattening dramatically reduce payload size.
-
-### Reduced Average Request Cost
-
-Simple requests are routed to lower-cost models.
-
-### High Resilience
-
-Fallback chains reduce user-visible failures.
-
-### Long Context Survivability
-
-History compression mitigates runaway prompt growth.
-
----
-
-# Known Trade-Offs
-
-## Increased Complexity
-
-The proxy introduces substantial compatibility logic.
-
-This increases:
-
-* Maintenance burden
-* Edge-case surface area
-* Provider-specific coupling
-
-## Risk of Semantic Drift
-
-History flattening and thinking conversion may alter subtle reasoning context.
-
-## In-Memory State Limitations
-
-Caches and statistics are process-local.
-
-This implementation is not yet horizontally coordinated.
-
-## Provider Coupling
-
-Some logic is tightly coupled to:
-
-* Anthropic message structure
-* LiteLLM translation behavior
-* Gemini validation constraints
-
----
-
-# Recommended Future Improvements
-
-## 1. Persistent Distributed Cache
-
-Move classification and cleaned-history caches to Redis.
-
-## 2. Structured Metrics Export
-
-Expose Prometheus metrics:
-
-* Routing counts
-* Fallback counts
-* Cost savings
-* Provider latency
-* Error rates
-
-## 3. Adaptive Routing Feedback Loop
-
-Use real request outcomes to improve routing quality.
-
-Possible signals:
-
-* Retry frequency
-* User interruption rate
-* Tool failure rate
-* Output acceptance
-
-## 4. Schema Fingerprinting
-
-Precompute tool schema complexity hashes instead of recomputing per request.
-
-## 5. Better History Compression
-
-Current flattening is heuristic.
-
-A semantic summarization layer would preserve more context fidelity.
-
-## 6. Multi-Worker Shared State
-
-Current caches and cost statistics are process-local.
-
-Production deployments should externalize:
-
-* History cache
-* Classification cache
-* Savings aggregation
-
----
-
-# Conclusion
-
-This implementation is not a simple reverse proxy.
-
-It is effectively a compatibility-aware adaptive inference router optimized for coding-assistant workloads.
-
-The design addresses several difficult operational realities:
-
-* Extremely large prompts
-* Tool-heavy conversations
-* Provider incompatibilities
-* Long-running sessions
-* Cost pressure
-* Streaming reliability
-
-The strongest aspects of the implementation are:
-
-* Defensive request sanitation
-* Pragmatic provider compatibility handling
-* Aggressive token optimization
-* Multi-stage fallback behavior
-* Fine-grained cost attribution
-
-The largest architectural risk is the growing amount of provider-specific normalization logic, particularly around Gemini compatibility and Anthropic tool semantics.
-
-As additional providers are added, this layer should likely evolve into a formal transformation pipeline with explicit provider adapters rather than incremental conditional logic.
+Changes to these upstream specifications require updates to the normalization modules.
