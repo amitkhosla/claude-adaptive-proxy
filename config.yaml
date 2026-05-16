@@ -1,0 +1,95 @@
+# Smart Router Configuration
+
+api:
+  base_url: "<litellm URL>"
+
+# Model used as baseline for cost savings comparison
+baseline_model: "claude-sonnet"
+
+# Proxy specific settings
+proxy_port: 8000
+verbose_full_logging: true
+max_full_log_files: 100
+
+large_prompt_threshold_bytes: 1000000
+
+# Gemini-specific history handling
+gemini_history_limit: 60                    # Max messages to send to Gemini (older ones compressed)
+compress_history_on_gemini: true            # Compress old messages instead of truncating them
+gemini_system_instruction_max_chars: 8000   # Vertex AI limit; move to message if exceeded
+
+# Model chains (in preference order)
+chains:
+  # Large prompt + complex tools -> Sonnet
+  claude_1m:
+    - "claude-sonnet-4-5"
+    - "claude-sonnet-4-6"
+    - "gemini-2.5-pro"
+
+  # Large prompt + simple tools -> Gemini Pro
+  gemini_large:
+    - "gemini-2.5-pro"
+    - "gemini-3-pro-preview"
+
+  # Normal prompts, no/simple tools -> Prefer Gemini over Claude
+  gemini:
+    low:    ["gemini-flash", "claude-haiku"]
+    medium: ["gemini-2.5-flash", "claude-sonnet"]
+    high:   ["gemini-2.5-pro", "claude-sonnet-4-6"]
+
+  # Normal prompts, complex tools -> Use Gemini Pro for "High", Sonnet for "Mid"
+  claude:
+    low:    ["gemini-flash", "claude-haiku"]
+    medium: ["gemini-2.5-flash", "claude-sonnet-4-6"]
+    high:   ["gemini-2.5-pro", "claude-sonnet-4-6", "claude-opus"]
+
+# Classifier model preference (cheapest first)
+classifier_preference:
+  - "gemini-flash"
+  - "gemini-2.5-flash"
+
+# Model pricing — per million tokens (input, output)
+pricing:
+  claude-haiku:            [0.25,   1.25]
+  claude-haiku-4-5:        [0.80,   4.00]
+  claude-sonnet:           [3.00,  15.00]
+  claude-sonnet-4-5:       [3.00,  15.00]
+  claude-sonnet-4-5[1m]:   [3.00,  15.00]
+  claude-sonnet-4[1m]:     [3.00,  15.00]
+  claude-sonnet-4-6:       [3.00,  15.00]
+  claude-opus-4-5:         [15.00, 75.00]
+  claude-opus-4-6:         [15.00, 75.00]
+  claude-opus-4-6[1m]:     [15.00, 75.00]
+  gemini-flash:            [0.075,  0.30]
+  gemini-2.5-flash:        [0.075,  0.30]
+  gemini-pro:              [1.25,   5.00]
+  gemini-2.5-pro:          [1.25,   5.00]
+  gemini-3-pro-preview:    [1.25,   5.00]
+
+# All tools are safe now because we sanitize the schemas for Gemini automatically
+gemini_safe_tools:
+  - "Read"
+  - "Write"
+  - "Bash"
+  - "Glob"
+  - "Grep"
+  - "LS"
+  - "WebFetch"
+  - "WebSearch"
+  - "Task"
+  - "TaskCreate"
+  - "TaskUpdate"
+  - "TaskGet"
+  - "TaskList"
+  - "TaskOutput"
+  - "TaskStop"
+  - "AskUserQuestion"
+  - "ExitPlanMode"
+  - "EnterPlanMode"
+  - "Skill"
+  - "NotebookEdit"
+  - "Edit"
+  - "google"
+  - "github"
+  - "jira"
+  - "confluence"
